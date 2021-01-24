@@ -1,0 +1,58 @@
+#!/bin/bash
+
+PARAMS=""
+while (( "$#" )); do
+  case "$1" in
+    -k|--trusted-keys)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        TRUSTED_KEYS=$2
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    -p|--packages)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        PACKAGES=$2
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    -*) # unsupported flags
+      echo "Error: Unsupported flag $1" >&2
+      exit 1
+      ;;
+    *) # preserve positional arguments
+      PARAMS="$PARAMS $1"
+      shift
+      ;;
+  esac
+done
+# set positional arguments in their proper place
+eval set -- "$PARAMS"
+
+if [[ -z "$PACKAGES" ]]; then
+  echo "No packages supplied"
+fi
+
+if [[ -n "$TRUSTED_KEYS" ]]; then
+  gpg --receive-keys $TRUSTED_KEYS
+fi
+
+for pkg in $PACKAGES; do
+  echo "building $pkg"
+  if [[ ! -d "$pkg" ]]; then
+    git clone "https://aur.archlinux.org/${pkg}.git"
+  fi
+  pushd "$pkg" || exit
+  makepkg -s --noconfirm --needed
+  rc=$?
+  # Keep going if we receive a "package already exists" error (13)
+  if [[ $rc -ne 0 ]] && [[ $rc -ne 13 ]]; then
+    exit $rc
+  fi
+  popd || exit
+done
